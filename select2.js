@@ -370,7 +370,14 @@
             }
         }));
 
-        this.monitorSource();
+        if ($.isFunction(this.opts.initSelection)) {
+            // initialize selection based on the current value of the source element
+            this.initSelection();
+
+            // if the user has provided a function that can set selection based on the value of the source element
+            // we monitor the change event on the element and trigger it, allowing for two way synchronization
+            this.monitorSource();
+        }
     };
 
     AbstractSelect2.prototype.prepareOpts = function (opts) {
@@ -451,20 +458,13 @@
 
     /**
      * Monitor the original element for changes and update select2 accordingly
-     * @note: must avoid recursive loop caused by onChange callbacks
      */
     AbstractSelect2.prototype.monitorSource = function () {
-        var self = this;
-        self.opts.element.bind("change", function(e){
-            if (this.opts.element.data("select2-triggered")) {
-                this.opts.element.data("select2-triggered", false);
-            } else {
-                self.updateSelection({
-                    id: self.opts.element.val(),
-                    text: self.opts.element.find('option:selected').text()
-                });
+        this.opts.element.bind("change", this.bind(function (e) {
+            if (this.opts.element.data("select2-change-triggered") !== true) {
+                this.initSelection();
             }
-        });
+        }));
     };
 
     /**
@@ -472,8 +472,9 @@
      */
     AbstractSelect2.prototype.triggerChange = function () {
         // Prevents recursive triggering
-        this.opts.element.data("select2-triggered", true);
+        this.opts.element.data("select2-change-triggered", true);
         this.opts.element.trigger("change");
+        this.opts.element.data("select2-change-triggered", false);
     };
 
     AbstractSelect2.prototype.opened = function () {
@@ -851,15 +852,24 @@
             this.triggerChange();
         }));
 
-        if ($.isFunction(this.opts.initSelection)) {
-            if (this.select || this.opts.element.val() !== "") {
-                selected = this.opts.initSelection.call(null, this.opts.element);
-                if (selected !== undefined && selected != null) {
-                    this.updateSelection(selected);
-                }
+        this.setPlaceholder();
+    };
+
+    /**
+     * Sets selection based on source element's value
+     */
+    SingleSelect2.prototype.initSelection = function () {
+        var selected;
+        if (this.opts.element.val() === "") {
+            this.updateSelection({id: "", text: ""});
+        } else {
+            selected = this.opts.initSelection.call(null, this.opts.element);
+            if (selected !== undefined && selected !== null) {
+                this.updateSelection(selected);
             }
         }
 
+        this.close();
         this.setPlaceholder();
     };
 
@@ -1088,14 +1098,23 @@
             this.clearPlaceholder();
         }));
 
-        if ($.isFunction(this.opts.initSelection)) {
-            if (this.select || this.opts.element.val() !== "") {
-                data = this.opts.initSelection.call(null, this.opts.element);
-                if (data !== undefined && data != null) {
-                    this.updateSelection(data);
-                }
+        // set the placeholder if necessary
+        this.clearSearch();
+    };
+
+    MultiSelect2.prototype.initSelection=function() {
+        var data;
+        if (this.opts.element.val()==="") {
+            this.updateSelection([]);
+        }
+        if (this.select || this.opts.element.val() !== "") {
+            data = this.opts.initSelection.call(null, this.opts.element);
+            if (data !== undefined && data != null) {
+                this.updateSelection(data);
             }
         }
+
+        this.close();
 
         // set the placeholder if necessary
         this.clearSearch();
@@ -1132,6 +1151,7 @@
 
     MultiSelect2.prototype.updateSelection = function (data) {
         var self = this;
+        console.log(this.selection);
         this.selection.find(".select2-search-choice").remove();
         $(data).each(function () {
             self.addSelectedChoice(this);
